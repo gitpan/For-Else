@@ -3,44 +3,48 @@ package For::Else;
 use strict;
 use warnings;
 
-our $VERSION = q{0.01};
+our $VERSION = q{0.02};
 
 use Filter::Simple;
 
-use Text::Balanced qw{ 
-	extract_codeblock
-};
+# Recursive regexp first pointed out to me in Acme::Butfirst (see perlre for
+# extended patterns ). Acme:: is a land^H^H^H^Hgold mine!
+
+my $parens_block;
+
+$parens_block = qr{
+	[(]
+		(?>
+			[^()]+ | (??{ $parens_block })
+		)*
+	[)]
+}smx;
+
+my $code_block;
+
+$code_block = qr{
+	{
+		(?>
+			[^{}]+ | (??{ $code_block })
+		)*
+	}
+}smx;
 
 FILTER_ONLY
 	'code' => sub {
-		my $source = q{};
-
-		while( s{ (.*?) ( for(?:each)? [^(]* [(] (.*?) [)] \s* ) }{}smx )
-		{
-			$source     .= $1;
-			my $foreach  = $2;
-			my $list     = $3;
-
-			my @result = extract_codeblock();
-
-			if ( $result[1] =~ m{ \A \s* else }smx )
-			{
-				$_ = qq{
-					if ( $list )
-					{
-						$foreach $result[0]
-					}
-					$result[1]
-				};
-
-				next;
-			}
-
-			$source .= $foreach . $result[0];
-			$_       = $result[1];
-		}
-
-		$_ =  $source . $_;
+		1 while
+			s{
+				( for(?:each)? [^(]* ($parens_block) \s*
+					$code_block )                    \s*
+				( else                               \s*
+					$code_block )
+			}{
+				if $2
+				{
+					$1
+				}
+				$3
+			}smx;
 	};
 
 1;
@@ -109,13 +113,12 @@ Now you can!
 
 =head1 DEPENDENCIES
 
-L<Text::Balanced>
-
 L<Filter::Simple>
 	
 =head1 BUGS / FEATURES
 
-WARNING: Does not do recursive blocks yet!
+B<Note:> Does not interpolate void-contextual expressions yet e.g. ranges,
+qw{}, etc.
 
 Please report any bugs or features. Better yet, submit a patch :)
 
